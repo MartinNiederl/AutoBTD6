@@ -1,10 +1,11 @@
-from helper import *
+import re
 
-fp = open("README.md")
-oldREADME = fp.read()
-fp.close()
+from helper import maps, version
 
-output = oldREADME
+with open('README.md') as fp:
+    old_README = fp.read()  # noqa: N816
+
+output = old_README
 
 output = re.sub(
     '<div id="map_parameter">.*?<\\/div>',
@@ -22,11 +23,8 @@ output = re.sub(
     re.DOTALL,
 )
 
-if output == oldREADME:
-    print("README identical after update")
+if output == old_README:
+    print('README identical after update')
 else:
-    fp = open("README.md", "w")
-    fp.write(output)
-    fp.close()
-
-import generate_supported_maps_table
+    with open('README.md', 'w') as fp:
+        fp.write(output)

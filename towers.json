@@ -724,7 +724,7 @@
             ]
         }
     },
-    "heros": {
+    "heroes": {
         "quincy": {
             "base": 540,
             "class": "land"

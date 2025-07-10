@@ -28,3 +28,19 @@ exclude = [
 [tool.ruff.format]
 quote-style = "single"
 docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "A",   # flake8-builtins
+    "COM", # flake8-commas
+    "SIM", # flake8-simplify
+    "N",   # pep8-naming
+    "I",   # isort
+]
+ignore = [
+    "SIM102", # merge nested if statements
+    "SIM114", # combine if statements with same body
+]

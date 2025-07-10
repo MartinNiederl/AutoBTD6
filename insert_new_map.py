@@ -1,83 +1,87 @@
-from helper import *
+import copy
+import json
+import sys
 
-if len(sys.argv) < 4 or not sys.argv[2] in ["before", "after"]:
+from helper import map_name_to_key_name, maps, maps_by_category, maps_by_category_to_map_list, userConfig
+
+if len(sys.argv) < 4 or sys.argv[2] not in ['before', 'after']:
     print(
-        f'Usage: py {sys.argv[0]} "<name of the new map>" <before|after> "<name of adjacent map>"'
+        f'Usage: py {sys.argv[0]} "<name of the new map>" <before|after> "<name of adjacent map>"',
     )
     exit()
 
-nextMap = sys.argv[3]
-nextMapKey = mapnameToKeyname(nextMap)
-newMap = sys.argv[1]
-newMapKey = mapnameToKeyname(newMap)
-insertPosOffset = 0 if sys.argv[2] == "before" else 1
+next_map = sys.argv[3]
+next_map_key = map_name_to_key_name(next_map)
+new_map = sys.argv[1]
+new_map_key = map_name_to_key_name(new_map)
+insert_pos_offset = 0 if sys.argv[2] == 'before' else 1
 
-if not nextMapKey in maps:
-    print(f"Unknown map: {nextMap}")
+if next_map_key not in maps:
+    print(f'Unknown map: {next_map}')
     exit()
-if newMapKey in maps:
-    print(f"New map already inserted!")
+if new_map_key in maps:
+    print('New map already inserted!')
     exit()
 
-mapsByCategory[maps[nextMapKey]["category"]].insert(
-    mapsByCategory[maps[nextMapKey]["category"]].index(nextMapKey) + insertPosOffset,
-    newMapKey,
+maps_by_category[maps[next_map_key]['category']].insert(
+    maps_by_category[maps[next_map_key]['category']].index(next_map_key) + insert_pos_offset,
+    new_map_key,
 )
-maps[newMapKey] = {"name": newMap}
+maps[new_map_key] = {'name': new_map}
 
-newMaps = mapsByCategoryToMaplist(mapsByCategory, maps)
+new_maps = maps_by_category_to_map_list(maps_by_category, maps)
 
-newMapsTmp = {}
+new_maps_tmp = {}
 
-i = 0
-for mapname in newMaps:
-    newMapsTmp[mapname] = f"%placeholder{i}%"
-    i += 1
+for i, map_name in enumerate(new_maps):
+    new_maps_tmp[map_name] = f'%placeholder{i}%'
 
-output = json.dumps(newMapsTmp, indent=4)
+output = json.dumps(new_maps_tmp, indent=4)
 
-i = 0
-for mapname in newMaps:
-    output = output.replace(f'"%placeholder{i}%"', json.dumps(newMaps[mapname]))
-    i += 1
+for i, map_name in enumerate(new_maps):
+    output = output.replace(f'"%placeholder{i}%"', json.dumps(new_maps[map_name]))
 
-fp = open("maps.json", "w")
-fp.write(output)
-fp.close()
+with open('maps.json', 'w') as fp:
+    fp.write(output)
 
 print('"maps.json" successfully updated')
 
-newUserconfig = copy.deepcopy(userConfig)
+new_user_config = copy.deepcopy(userConfig)
 
-if not newMapKey in newUserconfig['unlocked_maps']:
-    pos = list(newUserconfig['unlocked_maps'].keys()).index(nextMapKey)
-    items = list(newUserconfig['unlocked_maps'].items())
-    items.insert(pos, (newMapKey, True))
-    newUserconfig['unlocked_maps'] = dict(items)
+if new_map_key not in new_user_config['unlocked_maps']:
+    pos = list(new_user_config['unlocked_maps'].keys()).index(next_map_key)
+    items = list(new_user_config['unlocked_maps'].items())
+    items.insert(pos, (new_map_key, True))
+    new_user_config['unlocked_maps'] = dict(items)
 
-if not newMapKey in newUserconfig['medals']:
-    pos = list(newUserconfig['medals'].keys()).index(nextMapKey)
-    items = list(newUserconfig['medals'].items())
-    items.insert(pos, (newMapKey, {
-                "easy": True,
-                "primary_only": True,
-                "deflation": True,
-                "medium": True,
-                "military_only": True,
-                "reverse": True,
-                "apopalypse": True,
-                "hard": True,
-                "magic_monkeys_only": True,
-                "double_hp_moabs": True,
-                "half_cash": True,
-                "alternate_bloons_rounds": True,
-                "impoppable": True,
-                "chimps": True
-    }))
-    newUserconfig['medals'] = dict(items)
+if new_map_key not in new_user_config['medals']:
+    pos = list(new_user_config['medals'].keys()).index(next_map_key)
+    items = list(new_user_config['medals'].items())
+    items.insert(
+        pos,
+        (
+            new_map_key,
+            {
+                'easy': True,
+                'primary_only': True,
+                'deflation': True,
+                'medium': True,
+                'military_only': True,
+                'reverse': True,
+                'apopalypse': True,
+                'hard': True,
+                'magic_monkeys_only': True,
+                'double_hp_moabs': True,
+                'half_cash': True,
+                'alternate_bloons_rounds': True,
+                'impoppable': True,
+                'chimps': True,
+            },
+        ),
+    )
+    new_user_config['medals'] = dict(items)
 
-fp = open("userconfig.json", "w")
-fp.write(json.dumps(newUserconfig, indent=4))
-fp.close()
+with open('userconfig.json', 'w') as fp:
+    fp.write(json.dumps(new_user_config, indent=4))
 
 print('"userconfig.json" successfully updated')

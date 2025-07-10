@@ -69,5 +69,5 @@ Step = Union[
     AwaitRoundStep,
     SpeedStep,
     ClickStep,
-    StepBase  # default "empty" step
+    StepBase,  # default "empty" step
 ]
