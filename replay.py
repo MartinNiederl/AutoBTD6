@@ -1,82 +1,84 @@
+from typing import NotRequired, TypedDict
 from helper import *
 from ocr import custom_ocr
 
-smallActionDelay = 0.05
-actionDelay = 0.2
-menuChangeDelay = 1
+small_action_delay = 0.05
+action_delay = 0.2
+menu_change_delay = 1
 
-def getResolutionDependentData(resolution = pyautogui.size(), gamemode=''):
-    requiredComparisonImages = [{'category': 'screens', 'name': 'startmenu'}, {'category': 'screens', 'name': 'map_selection'}, {'category': 'screens', 'name': 'difficulty_selection'}, {'category': 'screens', 'name': 'gamemode_selection'}, {'category': 'screens', 'name': 'hero_selection'}, {'category': 'screens', 'name': 'ingame'}, {'category': 'screens', 'name': 'ingame_paused'}, {'category': 'screens', 'name': 'victory_summary'}, {'category': 'screens', 'name': 'victory'}, {'category': 'screens', 'name': 'defeat'}, {'category': 'screens', 'name': 'overwrite_save'}, {'category': 'screens', 'name': 'levelup'}, {'category': 'screens', 'name': 'apopalypse_hint'}, {'category': 'screens', 'name': 'round_100_insta'}, {'category': 'game_state', 'name': 'game_paused'}, {'category': 'game_state', 'name': 'game_playing_slow'}, {'category': 'game_state', 'name': 'game_playing_fast'}]
-    optionalComparisonImages = [{'category': 'screens', 'name': 'collection_claim_chest', 'for': [Mode.CHASE_REWARDS.name]}]
-    requiredLocateImages = [{'name': 'remove_obstacle_confirm_button'}, {'name': 'button_home'}]
-    optionalLocateImages = [{'name': 'unknown_insta', 'for': [Mode.CHASE_REWARDS.name]}, {'name': 'unknown_insta_mask', 'for': [Mode.CHASE_REWARDS.name]}]
+def get_resolution_dependent_data(monitor_resolution = pyautogui.size()) -> dict[str, object] | None:
+    ComparisonImage = TypedDict('ComparisonImage', {'category': str, 'name': str, 'for': NotRequired[list[str]]})
+    LocateImage = TypedDict('LocateImage', {'name': str, 'for': NotRequired[list[str]]})
 
-    imagesDir = 'images/' + getResolutionString(resolution) + '/'
+    # the next two variables define a similar structure to the 3 after; just to reduce duplication
+    required_image_classification_groups = {
+        'screens': [
+            'startmenu', 'map_selection', 'difficulty_selection', 'gamemode_selection', 'hero_selection', 'ingame', 'ingame_paused', 
+            'victory_summary', 'victory', 'defeat', 'overwrite_save', 'levelup', 'apopalypse_hint', 'round_100_insta'
+        ],
+        'game_state': ['game_paused', 'game_playing_slow', 'game_playing_fast']
+    }
+    required_comparison_images: list[ComparisonImage] = [
+        {'category': category, 'name': name}
+        for category, names in required_image_classification_groups.items()
+        for name in names
+    ]
+    optional_comparison_images: list[ComparisonImage] = [{'category': 'screens', 'name': 'collection_claim_chest', 'for': [Mode.CHASE_REWARDS.name]}]
 
-    comparisonImages = {}
-    locateImages = {}
+    required_locate_images: list[LocateImage] = [{'name': 'remove_obstacle_confirm_button'}, {'name': 'button_home'}]
+    optional_locate_images: list[LocateImage] = [{'name': 'unknown_insta', 'for': [Mode.CHASE_REWARDS.name]}, {'name': 'unknown_insta_mask', 'for': [Mode.CHASE_REWARDS.name]}]
 
-    if not exists(imagesDir):
+    images_dir = f'images/{getResolutionString(monitor_resolution)}/'
+
+    comparison_images: dict[str, dict[str, np.ndarray]] = {}
+    locate_images: dict[str, np.ndarray | dict[str, np.ndarray | None]] = {}
+
+    if not exists(images_dir):
         return None
 
-    supportedModes = dict.fromkeys([e.name for e in Mode], True)
+    supported_modes = dict.fromkeys([e.name for e in Mode], True)
 
-    for img in requiredComparisonImages:
-        filename = (img['filename'] if 'filename' in img else img['name']) + '.png'
-        if not exists(imagesDir + filename):
-            print(filename + ' missing!')
-            return None
-        elif 'category' in img:
-            if not img['category'] in comparisonImages:
-                comparisonImages[img['category']] = {}
-            comparisonImages[img['category']][img['name']] = cv2.imread(imagesDir + filename)
-        else:
-            comparisonImages[img['name']] = cv2.imread(imagesDir + filename)
-    
-    for img in optionalComparisonImages:
-        filename = (img['filename'] if 'filename' in img else img['name']) + '.png'
-        if not exists(imagesDir + filename):
-            if 'for' in img:
-                for mode in img['for']:
-                    supportedModes.pop(mode, None)
-        elif 'category' in img:
-            if not img['category'] in comparisonImages:
-                comparisonImages[img['category']] = {}
-            comparisonImages[img['category']][img['name']] = cv2.imread(imagesDir + filename)
-        else:
-            comparisonImages[img['name']] = cv2.imread(imagesDir + filename)
-    
-    for img in requiredLocateImages:
-        filename = (img['filename'] if 'filename' in img else img['name']) + '.png'
-        if not exists(imagesDir + filename):
-            print(filename + ' missing!')
-            return None
-        elif 'category' in img:
-            if not img['category'] in locateImages:
-                locateImages[img['category']] = {}
-            locateImages[img['category']][img['name']] = cv2.imread(imagesDir + filename)
-        else:
-            locateImages[img['name']] = cv2.imread(imagesDir + filename)
-    
-    for img in optionalLocateImages:
-        filename = (img['filename'] if 'filename' in img else img['name']) + '.png'
-        if not exists(imagesDir + filename):
-            if 'for' in img:
-                for mode in img['for']:
-                    supportedModes.pop(mode, None)
-        elif 'category' in img:
-            if not img['category'] in locateImages:
-                locateImages[img['category']] = {}
-            locateImages[img['category']][img['name']] = cv2.imread(imagesDir + filename)
-        else:
-            locateImages[img['name']] = cv2.imread(imagesDir + filename)
+    def load_images_or_fail(image_meta_list: list[ComparisonImage] | list[LocateImage], target_dict: dict) -> bool:
+        for image_info in image_meta_list:
+            filename = f"{image_info['name']}.png"
+            full_path = images_dir + filename
+            if not exists(full_path):
+                # remove modes that are unsupported due to missing images
+                if supported_modes is not None and 'for' in image_info:
+                    for mode in image_info['for']:
+                        supported_modes.pop(mode, None)
+                else:
+                    print(f"{filename} missing!")
+                    return False
+            else:
+                if 'category' in image_info:
+                    target_dict.setdefault(image_info['category'], {})[image_info['name']] = cv2.imread(full_path)
+                else:
+                    target_dict[image_info['name']] = cv2.imread(full_path)
+        return True
 
-    locateImages['collection'] = {}
-    if exists(imagesDir + 'collection_events'):
-        for filename in os.listdir(imagesDir + 'collection_events'):
-            locateImages['collection'][filename.replace('.png', '')] = cv2.imread(imagesDir + 'collection_events/' + filename)
+    if not load_images_or_fail(required_comparison_images, comparison_images):
+        return None
+
+    if not load_images_or_fail(required_locate_images, locate_images):
+        return None
     
-    return {'comparisonImages': comparisonImages, 'locateImages': locateImages, 'supportedModes': supportedModes, 'resolution': resolution}
+    load_images_or_fail(optional_comparison_images, comparison_images)
+    load_images_or_fail(optional_locate_images, locate_images)
+
+    dir_path = images_dir + 'collection_events'
+    if exists(dir_path):
+        locate_images['collection'] = {
+            f.replace('.png', ''): cv2.imread(f"{dir_path}/{f}")
+            for f in os.listdir(dir_path) if f.endswith('.png')
+        }
+
+    return {
+        'comparisonImages': comparison_images,
+        'locateImages': locate_images,
+        'supportedModes': supported_modes,
+        'resolution': monitor_resolution
+    }
 
 class State(Enum):
     UNDEFINED = 0
@@ -164,7 +166,7 @@ def signalHandler(signum, frame):
 def main():
     signal.signal(signal.SIGINT, signalHandler)
 
-    data = getResolutionDependentData()
+    data = get_resolution_dependent_data()
 
     if not data:
         print('unsupported resolution! reference images missing!')
@@ -333,7 +335,7 @@ def main():
         originalObjectives.append({'type': State.INGAME, 'mapConfig': mapConfig})
         originalObjectives.append({'type': State.MANAGE_OBJECTIVES})
     # py replay.py random [category] [gamemode]
-    # plays a random game from all available playthroughs (which fullfill the category and gamemode requirement if specified)
+    # plays a random game from all available playthroughs (which fulfill the category and gamemode requirement if specified)
     elif argv[iArg] == 'random':
         iAdditional = iArg + 1
         if len(argv) > iAdditional and argv[iAdditional] in mapsByCategory:
@@ -823,8 +825,9 @@ def main():
             customPrint("goal EXIT! exiting!")
             return
         elif state == State.GOTO_HOME:
+            customPrint("current screen: " + screen.name)
             if screen == Screen.STARTMENU:
-                customPrint("goal GOTO_HOME fullfilled!")
+                customPrint("goal GOTO_HOME fulfilled!")
                 state = State.UNDEFINED
             elif screen == Screen.UNKNOWN:
                 if lastScreen == Screen.UNKNOWN and unknownScreenHasWaited:
@@ -856,59 +859,59 @@ def main():
                 sendKey('{Esc}')
             elif screen == Screen.LEVELUP:
                 pyautogui.click(100, 100)
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(100, 100)
             elif screen == Screen.ROUND_100_INSTA:
                 pyautogui.click(100, 100)
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
             elif screen == Screen.COLLECTION_CLAIM_CHEST:
                 pyautogui.click(imageAreas["click"]["collection_claim_chest"])
-                time.sleep(menuChangeDelay * 2)
+                time.sleep(menu_change_delay * 2)
                 while True:
                     newScreenshot = np.array(pyautogui.screenshot())[:, :, ::-1].copy()
                     result = [cv2.minMaxLoc(cv2.matchTemplate(newScreenshot, locateImages['unknown_insta'], cv2.TM_SQDIFF_NORMED, mask=locateImages['unknown_insta_mask']))[i] for i in [0,2]]
                     if result[0] < 0.01:
                         pyautogui.click(result[1])
-                        time.sleep(menuChangeDelay)
+                        time.sleep(menu_change_delay)
                         pyautogui.click(result[1])
-                        time.sleep(menuChangeDelay)
+                        time.sleep(menu_change_delay)
                     else:
                         break
                 pyautogui.click(round(resolution[0] / 2), round(resolution[1] / 2))
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 sendKey('{Esc}')
             elif screen == Screen.APOPALYPSE_HINT:
                 pyautogui.click(imageAreas["click"]["gamemode_apopalypse_message_confirmation"])
         elif state == State.GOTO_INGAME:
             if screen == Screen.STARTMENU:
                 pyautogui.click(imageAreas["click"]["screen_startmenu_button_play"])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 if mapConfig['category'] == 'beginner':
                     pyautogui.click(imageAreas["click"]["map_categories"]['advanced'])
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
                     pyautogui.click(imageAreas["click"]["map_categories"][mapConfig['category']])
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
                 else:
                     pyautogui.click(imageAreas["click"]["map_categories"]['beginner'])
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
                     pyautogui.click(imageAreas["click"]["map_categories"][mapConfig['category']])
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
                 tmpClicks = mapConfig['page']
                 while tmpClicks > 0:
                     pyautogui.click(imageAreas["click"]["map_categories"][mapConfig['category']])
                     tmpClicks -= 1
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
                 pyautogui.click(imageAreas["click"]["map_positions"][mapConfig['pos']])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(imageAreas["click"]["gamedifficulty_positions"][mapConfig['difficulty']])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(getGamemodePosition(mapConfig['gamemode']))
             elif screen == Screen.OVERWRITE_SAVE:
                 pyautogui.click(imageAreas["click"]["screen_overwrite_save_button_ok"])
             elif screen == Screen.APOPALYPSE_HINT:
                 pyautogui.click(imageAreas["click"]["gamemode_apopalypse_message_confirmation"])
             elif screen == Screen.INGAME:
-                customPrint("goal GOTO_INGAME fullfilled!")
+                customPrint("goal GOTO_INGAME fulfilled!")
                 customPrint("game: " + mapConfig['map'] + ' - ' + mapConfig['difficulty'])
                 segmentCoordinates = getIngameOcrSegments(mapConfig)
                 iterationBalances = []
@@ -927,11 +930,11 @@ def main():
         elif state == State.SELECT_HERO:
             if screen == Screen.STARTMENU:
                 pyautogui.click(imageAreas["click"]["screen_startmenu_button_hero_selection"])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(imageAreas["click"]["hero_positions"][mapConfig['hero']])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(imageAreas["click"]["screen_hero_selection_select_hero"])
-                customPrint("goal SELECT_HERO " + mapConfig['hero'] + " fullfilled!")
+                customPrint("goal SELECT_HERO " + mapConfig['hero'] + " fulfilled!")
                 lastHeroSelected = mapConfig['hero']
                 state = State.UNDEFINED
             elif screen == Screen.UNKNOWN:
@@ -943,11 +946,11 @@ def main():
         elif state == State.FIND_HARDEST_INCREASED_REWARDS_MAP:
             if screen == Screen.STARTMENU:
                 pyautogui.click(imageAreas["click"]["screen_startmenu_button_play"])
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
 
                 if categoryRestriction:
                     pyautogui.click(imageAreas["click"]["map_categories"][('advanced' if categoryRestriction == 'beginner' else 'beginner')])
-                    time.sleep(menuChangeDelay)
+                    time.sleep(menu_change_delay)
 
                     mapname = None
                     for page in range(0, categoryPages[categoryRestriction]):
@@ -955,7 +958,7 @@ def main():
                         if collectionEvent == 'golden_bloon':
                             time.sleep(4)
                         else:
-                            time.sleep(menuChangeDelay)
+                            time.sleep(menu_change_delay)
                         newScreenshot = np.array(pyautogui.screenshot())[:, :, ::-1].copy()
                         result = findImageInImage(newScreenshot, locateImages['collection'][collectionEvent])
                         if result[0] < 0.05:
@@ -974,7 +977,7 @@ def main():
                     for category in reversed(list(mapsByCategory.keys())):
                         if iTmp == 0:
                             pyautogui.click(imageAreas["click"]["map_categories"][('advanced' if category == 'beginner' else 'beginner')])
-                            time.sleep(menuChangeDelay)
+                            time.sleep(menu_change_delay)
 
                         mapname = None
                         for page in range(0, categoryPages[category]):
@@ -982,7 +985,7 @@ def main():
                             if collectionEvent == 'golden_bloon':
                                 time.sleep(4)
                             else:
-                                time.sleep(menuChangeDelay)
+                                time.sleep(menu_change_delay)
                             newScreenshot = np.array(pyautogui.screenshot())[:, :, ::-1].copy()
                             result = findImageInImage(newScreenshot, locateImages['collection'][collectionEvent])
                             if result[0] < 0.05:
@@ -1025,11 +1028,11 @@ def main():
                     time.sleep(2)
             elif screen == Screen.LEVELUP:
                 pyautogui.click(100, 100)
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
                 pyautogui.click(100, 100)
             elif screen == Screen.ROUND_100_INSTA:
                 pyautogui.click(100, 100)
-                time.sleep(menuChangeDelay)
+                time.sleep(menu_change_delay)
             elif screen == Screen.VICTORY_SUMMARY:
                 if logStats:
                     lastPlaythroughStats['time'].append(('stop', time.time()))
@@ -1136,29 +1139,29 @@ def main():
                     customPrint('performing action: ' + str(action))
                     if action['action'] == 'place':
                         pyautogui.moveTo(action['pos'])
-                        time.sleep(actionDelay)
+                        time.sleep(action_delay)
                         sendKey(action['key'])
-                        time.sleep(actionDelay)
+                        time.sleep(action_delay)
                         pyautogui.click()
                     elif action['action'] == 'upgrade' or action['action'] == 'retarget' or action['action'] == 'special':
                         # game hints potentially blocking monkeys
                         pyautogui.click(action['pos'])
-                        time.sleep(actionDelay)
+                        time.sleep(action_delay)
                         actionTmp = None
                         while action:
                             if 'to' in action:
                                 pyautogui.moveTo(action['to'])
-                                time.sleep(smallActionDelay)
+                                time.sleep(small_action_delay)
                             if action['action'] == 'click':
-                                time.sleep(actionDelay)
+                                time.sleep(action_delay)
                                 pyautogui.moveTo(action['pos'])
                                 pyautogui.click()
-                                time.sleep(actionDelay)
+                                time.sleep(action_delay)
                             else:
                                 sendKey(action['key'])
                             if 'to' in action and mapConfig['monkeys'][action['name']]['type'] == 'mortar':
                                 pyautogui.click()
-                            time.sleep(smallActionDelay)
+                            time.sleep(small_action_delay)
                             actionTmp = action
                             if len(mapConfig['steps']) and 'name' in mapConfig['steps'][0] and mapConfig['steps'][0]['name'] == action['name'] and (mapConfig['steps'][0]['action'] == 'retarget' or mapConfig['steps'][0]['action'] == 'special' or mapConfig['steps'][0]['action'] == 'click'):
                                 action = mapConfig['steps'].pop(0)
@@ -1170,13 +1173,13 @@ def main():
                     elif action['action'] == 'sell':
                         pyautogui.moveTo(action['pos'])
                         pyautogui.click()
-                        time.sleep(actionDelay)
+                        time.sleep(action_delay)
                         sendKey(action['key'])
                     elif action['action'] == 'remove':
                         customPrint('removing obstacle at ' + tupleToStr(action['pos']) + ' for ' + str(action['cost']))
                         pyautogui.moveTo(action['pos'])
                         pyautogui.click()
-                        time.sleep(menuChangeDelay)
+                        time.sleep(menu_change_delay)
                         result = cv2.matchTemplate(np.array(pyautogui.screenshot())[:, :, ::-1].copy(), locateImages['remove_obstacle_confirm_button'], cv2.TM_SQDIFF_NORMED)
                         pyautogui.click(cv2.minMaxLoc(result)[2])
                     elif action['action'] == 'click':
@@ -1235,7 +1238,7 @@ def main():
         lastScreen = screen
         lastState = state
 
-        time.sleep(actionDelay if state == State.INGAME else menuChangeDelay)
+        time.sleep(action_delay if state == State.INGAME else menu_change_delay)
 
 if __name__ == "__main__":
     main()
