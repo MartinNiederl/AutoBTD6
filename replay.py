@@ -1,6 +1,7 @@
 from typing import NotRequired, TypedDict
 from helper import *
 from ocr import custom_ocr
+from step_types import Step
 
 small_action_delay = 0.05
 action_delay = 0.2
@@ -150,19 +151,19 @@ def get_gamemode_position(gamemode: str) -> tuple[int, int]:
         gamemode = positions[gamemode]
     return positions[gamemode]
 
-def get_next_non_sell_action(steps):
+def get_next_non_sell_action(steps: list[Step]) -> Step:
     for step in steps:
         if step['action'] != 'sell' and step['action'] != 'await_round':
             return step
     return {'action': 'nop', 'cost': 0}
 
-def get_next_costing_action(steps):
+def get_next_costing_action(steps: list[Step]) -> Step:
     for step in steps:
         if step.get('cost', 0) > 0:
             return step
     return {'action': 'nop', 'cost': 0}
 
-def sum_adjacent_sells(steps):
+def sum_adjacent_sells(steps: list[Step]) -> int:
     gain = 0
     for step in steps:
         if step['action'] != 'sell':
