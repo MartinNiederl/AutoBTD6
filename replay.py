@@ -7,6 +7,21 @@ action_delay = 0.2
 menu_change_delay = 1
 
 def get_resolution_dependent_data(monitor_resolution = pyautogui.size()) -> dict[str, object] | None:
+    """
+    Loads and returns image data and metadata required for screen and game state recognition,
+    based on the provided monitor resolution.
+    This function attempts to load required and optional images from a directory corresponding
+    to the given resolution. It organizes images into categories for comparison and location
+    tasks, and determines which game modes are supported based on the presence of required images.
+
+    Returns:
+        dict[str, object] | None: A dictionary containing:
+            - 'comparisonImages': dict of categorized comparison images loaded as numpy arrays.
+            - 'locateImages': dict of images for locating UI elements, loaded as numpy arrays.
+            - 'supportedModes': dict mapping supported mode names to True.
+            - 'resolution': The monitor resolution used.
+        Returns None if required images or directories are missing.
+    """
     ComparisonImage = TypedDict('ComparisonImage', {'category': str, 'name': str, 'for': NotRequired[list[str]]})
     LocateImage = TypedDict('LocateImage', {'name': str, 'for': NotRequired[list[str]]})
 
@@ -123,24 +138,31 @@ class Mode(Enum):
     VALIDATE_PLAYTHROUGHS = 9
     VALIDATE_COSTS = 10
 
-def getGamemodePosition(gamemode):
-    while not isinstance(imageAreas["click"]["gamemode_positions"][gamemode], list):
-        gamemode = imageAreas["click"]["gamemode_positions"][gamemode]
-    return imageAreas["click"]["gamemode_positions"][gamemode]
+def get_gamemode_position(gamemode: str) -> tuple[int, int]:
+    """
+    Returns the (x, y) screen coordinates for a given gamemode button.
 
-def getNextNonSellAction(steps):
+    If the specified gamemode's "position" is a reference to another gamemode (i.e., a string),
+    the function follows the reference chain until it finds the actual coordinates tuple.
+    """
+    positions = imageAreas["click"]["gamemode_positions"]
+    while isinstance(positions[gamemode], str):
+        gamemode = positions[gamemode]
+    return positions[gamemode]
+
+def get_next_non_sell_action(steps):
     for step in steps:
         if step['action'] != 'sell' and step['action'] != 'await_round':
             return step
     return {'action': 'nop', 'cost': 0}
 
-def getNextCostingAction(steps):
+def get_next_costing_action(steps):
     for step in steps:
         if step.get('cost', 0) > 0:
             return step
     return {'action': 'nop', 'cost': 0}
 
-def sumAdjacentSells(steps):
+def sum_adjacent_sells(steps):
     gain = 0
     for step in steps:
         if step['action'] != 'sell':
@@ -148,23 +170,23 @@ def sumAdjacentSells(steps):
         gain += -step.get('cost', 0)
     return gain
 
-exitAfterGame = False
+exit_after_game = False
 
-def setExitAfterGame():
-    global exitAfterGame
+def set_exit_after_game():
+    global exit_after_game
     activeWindow = ahk.get_active_window()
     if not activeWindow or not isBTD6Window(activeWindow.title):
         return
     customPrint("script will stop after finishing the current game!")
-    exitAfterGame = True
+    exit_after_game = True
 
-def signalHandler(signum, frame):
+def on_signal_interrupt(signum, frame):
     customPrint('received SIGINT! exiting!')
     sys.exit(0)
 
 
 def main():
-    signal.signal(signal.SIGINT, signalHandler)
+    signal.signal(signal.SIGINT, on_signal_interrupt)
 
     data = get_resolution_dependent_data()
 
@@ -604,7 +626,7 @@ def main():
     if usesAllAvailablePlaythroughsList and len(allAvailablePlaythroughsList) == 0:
         customPrint('no playthroughs matching requirements found!')
 
-    keyboard.add_hotkey('ctrl+space', setExitAfterGame)
+    keyboard.add_hotkey('ctrl+space', set_exit_after_game)
 
     objectives = copy.deepcopy(originalObjectives)
         
@@ -685,7 +707,7 @@ def main():
         elif state == State.MANAGE_OBJECTIVES:
             customPrint("entered objective management!")
             
-            if exitAfterGame:
+            if exit_after_game:
                 state = State.EXIT
                 continue
             
@@ -799,7 +821,7 @@ def main():
             objectiveFailed = False
         elif state == State.UNDEFINED:
             customPrint("entered state management!")
-            if exitAfterGame:
+            if exit_after_game:
                 state = State.EXIT
             if objectiveFailed:
                 customPrint("objective failed on step " + objectives[0]['type'].name + "(screen " + lastScreen.name + ")!")
@@ -905,7 +927,7 @@ def main():
                 time.sleep(menu_change_delay)
                 pyautogui.click(imageAreas["click"]["gamedifficulty_positions"][mapConfig['difficulty']])
                 time.sleep(menu_change_delay)
-                pyautogui.click(getGamemodePosition(mapConfig['gamemode']))
+                pyautogui.click(get_gamemode_position(mapConfig['gamemode']))
             elif screen == Screen.OVERWRITE_SAVE:
                 pyautogui.click(imageAreas["click"]["screen_overwrite_save_button_ok"])
             elif screen == Screen.APOPALYPSE_HINT:
@@ -1094,7 +1116,7 @@ def main():
 
                 if len(mapConfig['steps']):
                     if mapConfig['steps'][0]['action'] == 'sell':
-                        customPrint('detected money: ' + str(currentValues['money']) + ', required: ' + str(getNextNonSellAction(mapConfig['steps'])['cost'] - sumAdjacentSells(mapConfig['steps'])) + ' (' + str(getNextNonSellAction(mapConfig['steps'])['cost']) + ' - ' + str(sumAdjacentSells(mapConfig['steps'])) + ')' + '          ', end = '', rewriteLine=True)
+                        customPrint('detected money: ' + str(currentValues['money']) + ', required: ' + str(get_next_non_sell_action(mapConfig['steps'])['cost'] - sum_adjacent_sells(mapConfig['steps'])) + ' (' + str(get_next_non_sell_action(mapConfig['steps'])['cost']) + ' - ' + str(sum_adjacent_sells(mapConfig['steps'])) + ')' + '          ', end = '', rewriteLine=True)
                     if mapConfig['steps'][0]['action'] == 'await_round':
                         customPrint('detected round: ' + str(currentValues['round']) + ', awaiting: ' + str(mapConfig['steps'][0]['round']) + '          ', end = '', rewriteLine=True)
                     else:
@@ -1131,7 +1153,7 @@ def main():
                 or mapConfig['gamemode'] == 'deflation' 
                 or mapConfig['steps'][0]['action'] == 'await_round' and currentValues['round'] >= mapConfig['steps'][0]['round']
                 or mapConfig['steps'][0]['action'] == 'await_round' and mode == Mode.VALIDATE_PLAYTHROUGHS
-                or ((mapConfig['steps'][0]['action'] == 'sell') and min(currentValues['money'], lastIterationBalance - lastIterationCost) + sumAdjacentSells(mapConfig['steps']) >= getNextNonSellAction(mapConfig['steps'])['cost'])):
+                or ((mapConfig['steps'][0]['action'] == 'sell') and min(currentValues['money'], lastIterationBalance - lastIterationCost) + sum_adjacent_sells(mapConfig['steps']) >= get_next_non_sell_action(mapConfig['steps'])['cost'])):
                     action = mapConfig['steps'].pop(0)
                     thisIterationAction = action
                     if action['action'] != 'sell' and action['action'] != 'await_round':
@@ -1196,7 +1218,7 @@ def main():
                 elif mode in [Mode.VALIDATE_PLAYTHROUGHS, Mode.VALIDATE_COSTS] and len(mapConfig['steps']) == 0 and lastIterationCost == 0:
                     state = State.UNDEFINED
 
-                if (not doAllStepsBeforeStart and mapConfig['gamemode'] != 'deflation' and not skippingIteration and getNextCostingAction(mapConfig['steps'])['cost'] > min(currentValues['money'], lastIterationBalance - lastIterationCost)) or len(mapConfig['steps']) == 0:
+                if (not doAllStepsBeforeStart and mapConfig['gamemode'] != 'deflation' and not skippingIteration and get_next_costing_action(mapConfig['steps'])['cost'] > min(currentValues['money'], lastIterationBalance - lastIterationCost)) or len(mapConfig['steps']) == 0:
                     bestMatchDiff = None
                     gameState = None
                     for screenCfg in [
