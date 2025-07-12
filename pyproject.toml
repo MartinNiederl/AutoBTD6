@@ -39,6 +39,10 @@ select = [
     "SIM", # flake8-simplify
     "N",   # pep8-naming
     "I",   # isort
+    # "UP",
+    "FURB",
+    "RUF",
+    "UP032", # Use f-string instead of format call	
 ]
 ignore = [
     "SIM102", # merge nested if statements

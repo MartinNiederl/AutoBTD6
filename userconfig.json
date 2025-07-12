@@ -122,136 +122,32 @@
         "ouch": true
     },
     "unlocked_monkey_upgrades": {
-        "dart": [
-            5,
-            5,
-            5
-        ],
-        "boomerang": [
-            5,
-            5,
-            5
-        ],
-        "bomb": [
-            5,
-            5,
-            5
-        ],
-        "tack": [
-            5,
-            5,
-            5
-        ],
-        "ice": [
-            5,
-            5,
-            5
-        ],
-        "glue": [
-            5,
-            5,
-            5
-        ],
-        "sniper": [
-            5,
-            5,
-            5
-        ],
-        "sub": [
-            5,
-            5,
-            5
-        ],
-        "buccaneer": [
-            5,
-            5,
-            5
-        ],
-        "ace": [
-            5,
-            5,
-            5
-        ],
-        "heli": [
-            5,
-            5,
-            5
-        ],
-        "mortar": [
-            5,
-            5,
-            5
-        ],
-        "dartling": [
-            5,
-            5,
-            5
-        ],
-        "wizard": [
-            5,
-            5,
-            5
-        ],
-        "super": [
-            5,
-            5,
-            5
-        ],
-        "ninja": [
-            5,
-            5,
-            5
-        ],
-        "alchemist": [
-            5,
-            5,
-            5
-        ],
-        "druid": [
-            5,
-            5,
-            5
-        ],
-        "farm": [
-            5,
-            5,
-            5
-        ],
-        "engineer": [
-            5,
-            5,
-            5
-        ],
-        "spike": [
-            5,
-            5,
-            5
-        ],
-        "village": [
-            5,
-            5,
-            5
-        ],
-        "beasthandler": [
-            5,
-            5,
-            5
-        ],
-        "mermonkey": [
-            5,
-            5,
-            5
-        ],
-        "desperado": [
-            5,
-            5,
-            5
-        ],
-        "hero": [
-            5,
-            5,
-            5
-        ]
+        "dart": [5, 5, 5],
+        "boomerang": [5, 5, 5],
+        "bomb": [5, 5, 5],
+        "tack": [5, 5, 5],
+        "ice": [5, 5, 5],
+        "glue": [5, 5, 5],
+        "sniper": [5, 5, 5],
+        "sub": [5, 5, 5],
+        "buccaneer": [5, 5, 5],
+        "ace": [5, 5, 5],
+        "heli": [5, 5, 5],
+        "mortar": [5, 5, 5],
+        "dartling": [5, 5, 5],
+        "wizard": [5, 5, 5],
+        "super": [5, 5, 5],
+        "ninja": [5, 5, 5],
+        "alchemist": [5, 5, 5],
+        "druid": [5, 5, 5],
+        "farm": [5, 5, 5],
+        "engineer": [5, 5, 5],
+        "spike": [5, 5, 5],
+        "village": [5, 5, 5],
+        "beasthandler": [5, 5, 5],
+        "mermonkey": [5, 5, 5],
+        "desperado": [5, 5, 5],
+        "hero": [5, 5, 5]
     },
     "medals": {
         "monkey_meadow": {

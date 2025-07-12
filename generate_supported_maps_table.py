@@ -2,16 +2,16 @@ import re
 from urllib.parse import quote_plus
 
 from helper import (
-    checkForSingleMonkeyGroup,
-    checkForSingleMonkeyType,
+    check_for_single_monkey_group,
+    check_for_single_monkey_type,
     gamemodes,
-    getAllAvailablePlaythroughs,
-    getMonkeyUpgradeRequirements,
+    get_all_available_playthroughs,
+    get_monkey_upgrade_requirements,
     maps,
-    monkeyUpgradesToString,
-    parseBTD6InstructionsFile,
-    playthroughStats,
+    monkey_upgrades_to_string,
+    playthrough_stats,
 )
+from instructions_file_manager import parse_btd6_instructions_file
 
 extra_comments = {
     'playthroughs/spice_islands#alternate_bloons_rounds#2560x1440#noMK#noWaterTowers.btd6': [
@@ -37,7 +37,7 @@ for gamemode in gamemodes:
 output += '\t\t<th>Comment</th>' + '\n'
 output += '\t</tr>' + '\n'
 
-playthroughs = getAllAvailablePlaythroughs()
+playthroughs = get_all_available_playthroughs()
 
 maps_by_category = {}
 
@@ -83,7 +83,7 @@ for category in maps_by_category:
                 else:
                     description += 'with MK'
 
-                map_config = parseBTD6InstructionsFile(playthrough['filename'])
+                map_config = parse_btd6_instructions_file(playthrough['filename'])
 
                 if 'hero' in map_config:
                     description += ', ' + ' '.join(
@@ -92,10 +92,10 @@ for category in maps_by_category:
                 else:
                     description += ', -'
 
-                single_type = checkForSingleMonkeyType(map_config['monkeys'])
+                single_type = check_for_single_monkey_type(map_config['monkeys'])
                 if single_type:
                     description += ', ' + single_type + ' only'
-                single_group = checkForSingleMonkeyGroup(map_config['monkeys'])
+                single_group = check_for_single_monkey_group(map_config['monkeys'])
                 if single_group:
                     description += ', ' + single_group + ' monkeys only'
 
@@ -118,26 +118,26 @@ for category in maps_by_category:
                         + ', '.join(
                             filter(
                                 lambda x: type(
-                                    playthroughStats[playthrough['filename']][x],
+                                    playthrough_stats[playthrough['filename']][x],
                                 )
                                 is dict
-                                and 'validation_result' in playthroughStats[playthrough['filename']][x]
-                                and playthroughStats[playthrough['filename']][x]['validation_result'] == True,
-                                playthroughStats[playthrough['filename']].keys(),
+                                and 'validation_result' in playthrough_stats[playthrough['filename']][x]
+                                and playthrough_stats[playthrough['filename']][x]['validation_result'] == True,
+                                playthrough_stats[playthrough['filename']].keys(),
                             ),
                         )
-                        if playthrough['filename'] in playthroughStats
-                        and len(playthroughStats[playthrough['filename']].keys())
+                        if playthrough['filename'] in playthrough_stats
+                        and len(playthrough_stats[playthrough['filename']].keys())
                         and len(
                             list(
                                 filter(
                                     lambda x: type(
-                                        playthroughStats[playthrough['filename']][x],
+                                        playthrough_stats[playthrough['filename']][x],
                                     )
                                     is dict
-                                    and 'validation_result' in playthroughStats[playthrough['filename']][x]
-                                    and playthroughStats[playthrough['filename']][x]['validation_result'] == True,
-                                    playthroughStats[playthrough['filename']].keys(),
+                                    and 'validation_result' in playthrough_stats[playthrough['filename']][x]
+                                    and playthrough_stats[playthrough['filename']][x]['validation_result'] == True,
+                                    playthrough_stats[playthrough['filename']].keys(),
                                 ),
                             ),
                         )
@@ -146,13 +146,13 @@ for category in maps_by_category:
                 )
 
                 title = ''
-                monkey_upgrade_requirements = getMonkeyUpgradeRequirements(
+                monkey_upgrade_requirements = get_monkey_upgrade_requirements(
                     map_config['monkeys'],
                 )
                 for monkey in monkey_upgrade_requirements:
                     if len(title):
                         title += ', '
-                    title += monkey + '(' + monkeyUpgradesToString(monkey_upgrade_requirements[monkey]) + ')'
+                    title += monkey + '(' + monkey_upgrades_to_string(monkey_upgrade_requirements[monkey]) + ')'
 
                 if first_playthrough_row:
                     first_playthrough_row = False

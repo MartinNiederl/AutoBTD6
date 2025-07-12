@@ -1,319 +1,328 @@
+import argparse
+import logging
 import math
 import signal
 import sys
 import time
+from dataclasses import dataclass
+from enum import Enum
 from os.path import exists
+from typing import Any, Callable, NotRequired, TypedDict, Union
 
 import ahk
 import keyboard
-import numpy as np
 import pyautogui
+from pyautogui import Point
+
+from consts import MONKEYS, PATHS
 
 # TODO: refactor this atrocity
 from helper import (
     gamemodes,
-    getBTD6InstructionsFileNameByConfig,
-    isBTD6Window,
+    is_btd6_window,
     keybinds,
     maps,
-    parseBTD6InstructionsFile,
     towers,
-    tupleToStr,
-    writeBTD6InstructionsFile,
 )
+from instructions_file_manager import get_btd6_instructions_file_name_by_config, parse_btd6_instructions_file, write_btd6_instructions_file
+from utils.utils import tuple_to_str
 
-monkeys_by_type_count = {'hero': 0}
-
-for monkey_type in keybinds['monkeys']:
-    monkeys_by_type_count[monkey_type] = 0
-
-selected_monkey = None
-monkeys = {}
-config = {'steps': []}
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def get_closest_monkey(pos: tuple[int, int]) -> dict:
-    closest_monkey = None
-    closest_dist = 10000
-    dist = None
-    for monkey in monkeys:
-        dist = math.dist(pos, monkeys[monkey]['pos'])
-        if dist < closest_dist:
-            closest_monkey = monkeys[monkey]
-            closest_dist = dist
-
-    print('selected monkey: ' + (closest_monkey['name'] or ''))
-    return {'monkey': closest_monkey, 'dist': closest_dist}
+# TODO: investigate and optimize
+class MonkeyType(TypedDict):
+    name: str
+    type: str  # what is the type vs name?
+    pos: tuple[int, int]  # TODO: check if we should use Point instead
+    upgrades: list[int]
+    value: Union[int, float]  # TODO: what is this for?
 
 
-def signal_handler(signum, frame):
-    keyboard.unhook_all()
-    print('stopping recording!')
-    writeBTD6InstructionsFile(config)
-    sys.exit(0)
+@dataclass
+class RecordingEventData:
+    action: str
+    type: str | None = None
+    path: str | None = None
+    round: int | None = None
 
 
-def on_recording_event(e):
-    global selected_monkey
-    global config
-    global monkeys
-    global monkeys_by_type_count
+class Action(Enum):
+    PLACE = 'place'
+    UPGRADE = 'upgrade'
+    SELECT_MONKEY = 'select_monkey'
+    REMOVE_OBSTACLE = 'remove_obstacle'
+    RETARGET = 'retarget'
+    MONKEY_SPECIAL = 'monkey_special'
+    SELL = 'sell'
+    AWAIT_ROUND = 'await_round'
 
-    pos = pyautogui.position()
 
-    active_window = ahk.get_active_window()
-    if not active_window or not isBTD6Window(active_window.title):
-        print('BTD6 not focused')
-        return
-    if not pyautogui.onScreen(pos):
-        print(tupleToStr(pos) + ' not on screen')
-        return
-    if e['action'] == 'select_monkey':
-        selected_monkey = get_closest_monkey(pos)['monkey']
-    elif e['action'] == 'remove_obstacle':
-        config['steps'].append({'action': 'remove', 'pos': pos})
-        print('remove obstacle at ' + tupleToStr(pos) + ' for ???')
-    elif e['action'] == 'retarget':
-        if selected_monkey is None:
-            print('selectedMonkey unassigned!')
+class KeypressDispatchEvent(TypedDict):
+    action: Action
+    placement_type: NotRequired[str]
+    upgrade_path: NotRequired[str]
+
+
+@dataclass
+class RecordData:
+    pass
+
+
+class BaseRecorder:
+    """
+    BaseRecorder provides a framework for handling and dispatching playthrough recording events.
+    Use the @BaseRecorder.on(action, ...) decorator to register handler methods for specific actions.
+    """
+
+    _handlers: dict[str, Callable[..., None]]
+
+    def __init__(self):
+        self._handlers = {}
+
+    @classmethod
+    def on(cls, action: Action, requires_selected_monkey: bool = False) -> Callable[[Callable[..., None]], Callable[..., None]]:
+        """
+        A decorator factory that registers a handler function for a given Action.
+        Args:
+            action (Action): The action to associate with the handler.
+            requires_selected_monkey (bool, optional): If True, the handler requires a selected monkey and will receive it as an argument. Defaults to False.
+        """
+
+        def decorator(func: Callable[..., None]) -> Callable[..., None]:
+            def wrapper(self, pos: Point, event: RecordingEventData) -> None:
+                if requires_selected_monkey:
+                    monkey = self.selected_monkey
+                    if monkey is None:
+                        logging.warning('No monkey selected for action: ' + action.value)
+                        return
+                    return func(self, pos, event, monkey)
+                return func(self, pos, event)
+
+            cls._handlers[action.value] = wrapper
+            return wrapper
+
+        return decorator
+
+
+class PlaythroughRecorder(BaseRecorder):
+    def __init__(self, config: dict[str, Any]):  # TODO fix type hint
+        self.config = config
+
+        self.monkeys_by_type_count = {'hero': 0}
+        for monkey_type in keybinds['monkeys']:
+            self.monkeys_by_type_count[monkey_type] = 0
+
+        self.placed_monkeys: dict[str, MonkeyType] = config.get('monkeys', {})
+        for monkey_name in self.placed_monkeys:
+            self.monkeys_by_type_count[self.placed_monkeys[monkey_name]['type']] += 1
+
+        self.file_name = get_btd6_instructions_file_name_by_config(self.config)
+
+        self.steps: list[dict[str, Any]] = []  # appended to config when recording is finished
+        self.selected_monkey = None
+
+    def start_recording(self):
+        self._create_keyboard_event_bindings()
+
+        def signal_handler(signum, frame):
+            self._finish_recording()
+            sys.exit(0)
+
+        logging.info(f'Starting recording for {self.config["map"]} {self.config["gamemode"]} with hero {self.config["hero"]}')
+        logging.info('Press Ctrl+C to stop recording.')
+        signal.signal(signal.SIGINT, signal_handler)
+
+        while True:
+            time.sleep(60)
+
+    def _finish_recording(self):
+        keyboard.unhook_all()
+        logging.info('Stopping recording!')
+        logging.info('Writing playthrough instructions to file: ' + self.file_name)
+
+        self.config['steps'] = self.steps
+        write_btd6_instructions_file(self.config)
+
+    def _on_keypress(self, e: KeypressDispatchEvent) -> None:
+        pos = pyautogui.position()
+        # TODO: check if this can be improved:
+        event = RecordingEventData(
+            action=e['action'].value,
+            type=e.get('placement_type'),
+            path=e.get('upgrade_path'),
+            round=e.get('round'),
+        )
+        # if not self._pre_checks(pos):  # TODO uncomment after testing
+        #     return
+
+        # dispatch the event to the appropriate handler
+        handler = type(self)._handlers.get(event.action, self._handle_unknown)
+        handler(self, pos, event)
+
+    def _pre_checks(self, pos: Point) -> bool:
+        win = ahk.get_active_window()
+        if not win or not is_btd6_window(win.title):
+            logging.warning('BTD6 not focused')
+            return False
+        if not pyautogui.onScreen(pos):
+            logging.warning(f'{tuple_to_str(pos)} not on screen')
+            return False
+        return True
+
+    def _record(self, action: str, **kwargs: Any) -> None:
+        entry = {'action': action, **kwargs}
+        self.steps.append(entry)
+        logging.info(self._format_message(action, **kwargs))
+
+    def _format_message(self, action: str, **kwargs: Any) -> str:
+        parts = [action] + [f'{k}={v}' for k, v in kwargs.items()]
+        return ' '.join(str(p) for p in parts)
+
+    @BaseRecorder.on(Action.SELECT_MONKEY)
+    def _handle_select_monkey(self, pos: Point, e: RecordingEventData) -> None:
+        monkey = self._get_closest_monkey(pos)['monkey']
+        if monkey is None:
+            logging.warning('No monkeys placed yet!')
             return
-        step = {'action': 'retarget', 'name': selected_monkey['name']}
+        self.selected_monkey = monkey
+        self._record('select_monkey', name=monkey['name'], pos=pos)
+
+    @BaseRecorder.on(Action.REMOVE_OBSTACLE)
+    def _handle_remove_obstacle(self, pos: Point, e: RecordingEventData) -> None:
+        self._record('remove', pos=pos)
+
+    @BaseRecorder.on(Action.RETARGET)
+    def _handle_retarget(self, pos: Point, e: RecordingEventData) -> None:
+        if not self.selected_monkey:
+            logging.warning('selectedMonkey unassigned!')
+            return
+        name = self.selected_monkey['name']
         if keyboard.is_pressed('space'):
-            step['to'] = pos
-            print('retarget ' + selected_monkey['name'] + ' to ' + tupleToStr(pos))
-        elif selected_monkey['type'] == 'mortar':
-            print('mortar can only be retargeted to a position(tab + space)!')
-            return
+            self._record('retarget', name=name, to=pos)
+        elif self.selected_monkey['type'] == 'mortar':
+            logging.warning('mortar can only be retargeted to a position(tab + space)!')
         else:
-            print('retarget ' + selected_monkey['name'])
-        config['steps'].append(step)
-    elif e['action'] == 'monkey_special':
-        if selected_monkey is None:
-            print('selectedMonkey unassigned!')
-            return
-        config['steps'].append({'action': 'special', 'name': selected_monkey['name']})
-        print('special ' + selected_monkey['name'])
-    elif e['action'] == 'sell':
-        if selected_monkey is None:
-            print('selectedMonkey unassigned!')
-            return
-        config['steps'].append({'action': 'sell', 'name': selected_monkey['name']})
-        print('sell ' + selected_monkey['name'])
-        monkeys.pop(selected_monkey['name'])
-        selected_monkey = None
-    elif e['action'] == 'place' and e['type'] == 'hero':
-        monkey_name = 'hero' + str(monkeys_by_type_count['hero'])
-        config['steps'].append({'action': 'place', 'type': 'hero', 'name': monkey_name, 'pos': pos})
-        print('place ' + config['hero'] + ' ' + monkey_name + ' at ' + tupleToStr(pos))
-        monkeys_by_type_count['hero'] += 1
-        monkeys[monkey_name] = {'name': monkey_name, 'type': config['hero'], 'pos': pos}
-    elif e['action'] == 'place':
-        monkey_name = e['type'] + str(monkeys_by_type_count[e['type']])
-        config['steps'].append({'action': 'place', 'type': e['type'], 'name': monkey_name, 'pos': pos})
-        print('place ' + e['type'] + ' ' + monkey_name + ' ' + tupleToStr(pos))
-        monkeys_by_type_count[e['type']] += 1
-        monkeys[monkey_name] = {'name': monkey_name, 'type': e['type'], 'pos': pos}
-        selected_monkey = get_closest_monkey(pos)['monkey']
-    elif e['action'] == 'upgrade':
-        if selected_monkey is None:
-            print('selectedMonkey unassigned!')
-            return
-        config['steps'].append({'action': 'upgrade', 'name': selected_monkey['name'], 'path': e['path']})
-        print('upgrade ' + selected_monkey['name'] + ' path ' + e['path'])
-    elif e['action'] == 'await_round':
-        e['round'] = input('wait for round: ')
+            self._record('retarget', name=name)
+
+    @BaseRecorder.on(Action.MONKEY_SPECIAL, requires_selected_monkey=True)
+    def _handle_special(self, pos: Point, e: RecordingEventData, selected_monkey: dict[str, str]) -> None:
+        self._record('special', name=selected_monkey['name'])
+
+    @BaseRecorder.on(Action.SELL, requires_selected_monkey=True)
+    def _handle_sell(self, pos: Point, e: RecordingEventData, selected_monkey: dict[str, str]) -> None:
+        name = selected_monkey['name']
+        self._record('sell', name=name)
+        self.placed_monkeys.pop(name, None)
+        self.selected_monkey = None
+
+    @BaseRecorder.on(Action.PLACE)
+    def _handle_place(self, pos: Point, e: RecordingEventData) -> None:
+        placement_type = e.type or ''
+        idx = self.monkeys_by_type_count.get(placement_type, 0)
+        name = f'{placement_type}{idx}'
+        self.monkeys_by_type_count[placement_type] = idx + 1
+        self.placed_monkeys[name] = {'name': name, 'type': placement_type, 'pos': pos}
+        if placement_type != 'hero':
+            self.selected_monkey = self._get_closest_monkey(pos)['monkey']
+
+        self._record('place', type=placement_type, name=name, pos=pos)
+
+    @BaseRecorder.on(Action.UPGRADE, requires_selected_monkey=True)
+    def _handle_upgrade(self, pos: Point, e: RecordingEventData, selected_monkey: dict[str, str]) -> None:
+        self._record('upgrade', name=selected_monkey['name'], path=e.path)
+
+    @BaseRecorder.on(Action.AWAIT_ROUND)
+    def _handle_await_round(self, pos: Point, e: RecordingEventData) -> None:
         try:
-            e['round'] = int(e['round'])
-            if e['round'] > 0 and not any((x['action'] == 'await_round' and x['round'] >= e['round']) for x in config['steps']):
-                config['steps'].append({'action': 'await_round', 'round': e['round']})
-                print('await round ' + str(e['round']))
+            r = int(input('wait for round: '))
+            if r > 0 and not any(step['action'] == 'await_round' and step.get('round', 0) >= r for step in self.steps):
+                self._record('await_round', round=r)
                 return
         except ValueError:
             pass
-        print('invalid round! aborting entry!')
+        logging.warning('invalid round! aborting entry!')
+
+    def _handle_unknown(self, pos: Point, e: RecordingEventData) -> None:
+        # TODO: fix - not working / never called for some reason
+        logging.warning(f'unknown action: {e.action}')
+
+    def _get_closest_monkey(self, pos: tuple[int, int]) -> dict:
+        closest_monkey, closest_dist = None, float('inf')
+        dist = None
+        for monkey in self.placed_monkeys:
+            dist = math.dist(pos, self.placed_monkeys[monkey]['pos'])
+            if dist < closest_dist:
+                closest_monkey = self.placed_monkeys[monkey]
+                closest_dist = dist
+
+        for name, monkey in self.placed_monkeys.items():
+            dist = math.dist(pos, monkey['pos'])
+            if dist < closest_dist:
+                closest_monkey = monkey
+                closest_dist = dist
+
+        return {'monkey': closest_monkey}
+
+    def _create_keyboard_event_bindings(self):
+        for monkey in MONKEYS:
+            keyboard.on_press_key(keybinds['monkeys'][monkey], lambda _, monkey=monkey: self._on_keypress({'action': Action.PLACE, 'placement_type': monkey}))
+
+        for path in [str(path) for path in PATHS]:
+            keyboard.on_press_key(keybinds['path'][path], lambda _, path=path: self._on_keypress({'action': Action.UPGRADE, 'upgrade_path': path}))
+
+        recording_events: dict[str, KeypressDispatchEvent] = {
+            **{key.value: {'action': key} for key in [Action.SELECT_MONKEY, Action.REMOVE_OBSTACLE, Action.RETARGET, Action.SELL, Action.MONKEY_SPECIAL, Action.AWAIT_ROUND]},
+        }
+
+        for event_name, event_cfg in recording_events.items():
+            keyboard.on_press_key(keybinds['recording'][event_name], lambda _, cfg=event_cfg: self._on_keypress(cfg))
 
 
-while True:
-    print('map name > ')
-    config['map'] = input().replace(' ', '_').lower()
-    if config['map'] in maps:
-        break
+def parse_and_get_args() -> tuple[bool, bool, dict[str, str]]:
+    parser = argparse.ArgumentParser(description='Record a BTD6 playthrough.')
+    parser.add_argument('-e', '--extend', action='store_true', help='Extend an existing recording instead of creating a new one')
+    parser.add_argument('-o', '--overwrite', action='store_true', help='Force overwrite existing recording file')
+    parser.add_argument('--map', choices=maps)
+    parser.add_argument('--gamemode', choices=gamemodes)
+    parser.add_argument('--hero', choices=towers['heroes'])
+    args = parser.parse_args()
+    params = {'map': args.map, 'gamemode': args.gamemode, 'hero': args.hero}
+
+    def gather_input(name: str, options: list[str]) -> str:
+        while True:
+            value = input(f'{name} > ').replace(' ', '_').lower()
+            if value in options:
+                return value
+            print(f'Invalid {name}. Choose from: {", ".join(options)}')
+
+    for name, options in (('map', maps), ('gamemode', gamemodes), ('hero', towers['heroes'])):
+        if not params[name]:
+            params[name] = gather_input(name, options)
+
+    return args.extend, args.overwrite, params
+
+
+def main(extend: bool, overwrite: bool, config: dict[str, str]):
+    filename = get_btd6_instructions_file_name_by_config(config)
+
+    if extend:
+        if not exists(filename):
+            logging.error(f'File {filename} does not exist. Cannot extend.')
+            return
+
+        existing_config = parse_btd6_instructions_file(filename)
+        config['steps'] = existing_config['steps']
+        config['monkeys'] = existing_config['monkeys']
     else:
-        print('unknown map!')
+        if exists(filename) and not overwrite:
+            logging.error(f'Recording for {config["map"]} {config["gamemode"]} with hero {config["hero"]} already exists as {filename}.')
+            logging.error('Use -e to extend the existing file or delete the file to start a new recording.')
+            return
 
-while True:
-    print('gamemode > ')
-    config['gamemode'] = input().replace(' ', '_').lower()
-    if config['gamemode'] in gamemodes:
-        break
-    else:
-        print('unknown gamemode!')
+    recorder = PlaythroughRecorder(config)
+    recorder.start_recording()
 
-while True:
-    print('hero > ')
-    config['hero'] = input().replace(' ', '_').lower()
-    if config['hero'] in towers['heroes']:
-        break
-    else:
-        print('unknown hero!')
 
-filename = getBTD6InstructionsFileNameByConfig(config)
-
-argv = np.array(sys.argv)
-
-extending = False
-
-if len(np.where(argv == '-e')[0]):
-    print('extending upon existing file')
-    if not exists(filename):
-        print('requested extending of file, but file not existing!')
-        exit()
-    extending = True
-    new_config = parseBTD6InstructionsFile(filename)
-    config['steps'] = new_config['steps']
-    monkeys = new_config['monkeys']
-
-    for monkey_name in monkeys:
-        monkeys_by_type_count[monkeys[monkey_name]['type']] += 1
-
-if not extending and exists(filename):
-    print('run for selected config already existing! rename or delete "' + filename + '" if you want to record again!')
-    exit()
-
-print('started recording to "' + filename + '"')
-
-signal.signal(signal.SIGINT, signal_handler)
-
-# filtering on all key presses doesn't work as the provided key name is localized
-# keyboard.hook(onKeyPress)
-
-keyboard.on_press_key(
-    keybinds['monkeys']['dart'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'dart'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['boomerang'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'boomerang'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['bomb'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'bomb'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['tack'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'tack'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['ice'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'ice'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['glue'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'glue'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['sniper'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'sniper'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['sub'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'sub'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['buccaneer'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'buccaneer'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['ace'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'ace'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['heli'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'heli'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['mortar'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'mortar'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['dartling'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'dartling'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['wizard'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'wizard'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['super'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'super'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['ninja'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'ninja'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['alchemist'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'alchemist'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['druid'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'druid'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['farm'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'farm'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['engineer'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'engineer'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['spike'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'spike'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['village'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'village'}),
-)
-keyboard.on_press_key(
-    keybinds['monkeys']['hero'],
-    lambda e: on_recording_event({'action': 'place', 'type': 'hero'}),
-)
-
-keyboard.on_press_key(
-    keybinds['path']['0'],
-    lambda e: on_recording_event({'action': 'upgrade', 'path': '0'}),
-)
-keyboard.on_press_key(
-    keybinds['path']['1'],
-    lambda e: on_recording_event({'action': 'upgrade', 'path': '1'}),
-)
-keyboard.on_press_key(
-    keybinds['path']['2'],
-    lambda e: on_recording_event({'action': 'upgrade', 'path': '2'}),
-)
-
-keyboard.on_press_key(
-    keybinds['recording']['select_monkey'],
-    lambda e: on_recording_event({'action': 'select_monkey'}),
-)
-keyboard.on_press_key(
-    keybinds['recording']['remove_obstacle'],
-    lambda e: on_recording_event({'action': 'remove_obstacle'}),
-)
-keyboard.on_press_key(
-    keybinds['recording']['retarget'],
-    lambda e: on_recording_event({'action': 'retarget'}),
-)
-keyboard.on_press_key(keybinds['recording']['sell'], lambda e: on_recording_event({'action': 'sell'}))
-keyboard.on_press_key(
-    keybinds['recording']['monkey_special'],
-    lambda e: on_recording_event({'action': 'monkey_special'}),
-)
-keyboard.on_press_key(
-    keybinds['recording']['await_round'],
-    lambda e: on_recording_event({'action': 'await_round', 'round': '0'}),
-)
-
-while True:
-    time.sleep(60)
+if __name__ == '__main__':
+    main(*parse_and_get_args())

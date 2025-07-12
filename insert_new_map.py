@@ -2,7 +2,8 @@ import copy
 import json
 import sys
 
-from helper import map_name_to_key_name, maps, maps_by_category, maps_by_category_to_map_list, userConfig
+from helper import map_name_to_key_name, maps, maps_by_category, maps_by_category_to_map_list, user_config
+from utils.utils import save_json_file
 
 if len(sys.argv) < 4 or sys.argv[2] not in ['before', 'after']:
     print(
@@ -46,7 +47,7 @@ with open('maps.json', 'w') as fp:
 
 print('"maps.json" successfully updated')
 
-new_user_config = copy.deepcopy(userConfig)
+new_user_config = copy.deepcopy(user_config)
 
 if new_map_key not in new_user_config['unlocked_maps']:
     pos = list(new_user_config['unlocked_maps'].keys()).index(next_map_key)
@@ -81,7 +82,6 @@ if new_map_key not in new_user_config['medals']:
     )
     new_user_config['medals'] = dict(items)
 
-with open('userconfig.json', 'w') as fp:
-    fp.write(json.dumps(new_user_config, indent=4))
+save_json_file('userconfig.json', new_user_config)
 
 print('"userconfig.json" successfully updated')

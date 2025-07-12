@@ -2,6 +2,7 @@
     "cSpell.words": [
         "apopalypse",
         "autobtd",
+        "beasthandler",
         "bloon",
         "bloons",
         "dartling",
@@ -17,8 +18,10 @@
         "isort",
         "keras",
         "keybinds",
+        "levelname",
         "levelup",
         "mcls",
+        "mermonkey",
         "moabs",
         "ndarray",
         "nomk",
@@ -39,6 +42,7 @@
         "signum",
         "SQDIFF",
         "startmenu",
-        "unvalidated"
+        "unvalidated",
+        "userconfig"
     ]
 }
