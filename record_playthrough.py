@@ -4,10 +4,11 @@ import math
 import signal
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from os.path import exists
-from typing import Any, Callable, NotRequired, TypedDict, Union
+from typing import Any, NotRequired, TypedDict
 
 import ahk
 import keyboard
@@ -36,7 +37,7 @@ class MonkeyType(TypedDict):
     type: str  # what is the type vs name?
     pos: tuple[int, int]  # TODO: check if we should use Point instead
     upgrades: list[int]
-    value: Union[int, float]  # TODO: what is this for?
+    value: int | float  # TODO: what is this for?
 
 
 @dataclass

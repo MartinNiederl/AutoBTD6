@@ -10,6 +10,7 @@ dependencies = [
     "opencv-python>=4.12.0.88",
     "pillow>=11.3.0",
     "pyautogui>=0.9.54",
+    "pydantic>=2.11.7",
     "ruff>=0.12.2",
     "tensorflow>=2.19.0",
 ]
@@ -31,20 +32,21 @@ docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # Pyflakes
-    "A",   # flake8-builtins
-    "COM", # flake8-commas
-    "SIM", # flake8-simplify
-    "N",   # pep8-naming
-    "I",   # isort
-    # "UP",
-    "FURB",
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # Pyflakes
+    "A",     # flake8-builtins
+    "COM",   # flake8-commas
+    "SIM",   # flake8-simplify
+    "N",     # pep8-naming
+    "I",     # isort
+    "UP",    # pyupgrade
+    "FURB",  # refurb
     "RUF",
     "UP032", # Use f-string instead of format call	
 ]
 ignore = [
     "SIM102", # merge nested if statements
     "SIM114", # combine if statements with same body
+    "UP015",  # redundant open modes
 ]
