@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 MonkeyHotkey = str | int
 PathHotkey = int
@@ -12,7 +12,7 @@ class Keybinds(BaseModel):
     Keybinds for monkeys, where the key can be a string or an integer.
     In case of an integer, it represents an AHK (AutoHotkey) key code. (e.g., 21 for 'Y')
     """
-    path: dict[str, PathHotkey]
+    paths: dict[str, PathHotkey] = Field(..., alias='path')
     others: dict[str, OtherHotkey]
     recording: dict[str, RecordingHotkey]
 
@@ -23,6 +23,6 @@ if __name__ == '__main__':
 
     config = Keybinds.model_validate_json(data, strict=True)
     print(config.monkeys['dart'])
-    print(config.path['0'])
+    print(config.paths['0'])
     print(config.others['sell'])
     print(config.recording['retarget'])

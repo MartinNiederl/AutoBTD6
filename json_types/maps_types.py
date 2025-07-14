@@ -10,7 +10,7 @@ class MapCategory(str, Enum):
     expert = 'expert'
 
 
-class MapModel(BaseModel):
+class Map(BaseModel):
     category: MapCategory
     """Category of the map (beginner, intermediate, advanced, expert)."""
     name: str
@@ -22,7 +22,7 @@ class MapModel(BaseModel):
 
 
 class Maps(RootModel):
-    root: dict[str, MapModel]
+    root: dict[str, Map]
     """
     Maps configuration, where the key is the map identifier (e.g., 'carved', 'ouch').
     Each map has a category, name, page number, and position on that page.
